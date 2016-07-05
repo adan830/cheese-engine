@@ -23,6 +23,10 @@ public:
     //How the game handles different logical resolutions and resolution options
     static std::string resolution_mode;
 
+    //If true, use the 3D renderer
+    //If false, use the 2D renderer
+    static bool three_d;
+
     static bool network_lockstep;
 
     static double sound_falloff;

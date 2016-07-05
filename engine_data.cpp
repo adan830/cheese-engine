@@ -20,6 +20,8 @@ int Engine_Data::logical_screen_height=0;
 
 string Engine_Data::resolution_mode="";
 
+bool Engine_Data::three_d=false;
+
 bool Engine_Data::network_lockstep=false;
 
 double Engine_Data::sound_falloff=0.0;
@@ -108,6 +110,9 @@ void Engine_Data::load_engine_data(File_IO_Load* load){
         }
         else if(Data_Reader::check_prefix(line,"resolution_mode:")){
             resolution_mode=line;
+        }
+        else if(Data_Reader::check_prefix(line,"three_d:")){
+            three_d=Strings::string_to_bool(line);
         }
         else if(Data_Reader::check_prefix(line,"logic_update_rate:")){
             uint32_t new_update_rate=Strings::string_to_unsigned_long(line);

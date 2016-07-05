@@ -14,6 +14,7 @@
 
 #include <SDL_mixer.h>
 #include <SDL_image.h>
+#include <SDL_opengl.h>
 
 using namespace std;
 
@@ -23,6 +24,8 @@ bool Game_Window::initialized=false;
 SDL_Window* Game_Window::screen=0;
 
 SDL_Renderer* Game_Window::renderer=0;
+
+SDL_GLContext Game_Window::context=0;
 
 int Game_Window::SCREEN_WIDTH=0;
 int Game_Window::SCREEN_HEIGHT=0;
@@ -49,6 +52,13 @@ bool Game_Window::initialize_video(){
 
     if(Options::bind_cursor){
         flags=SDL_WINDOW_INPUT_GRABBED;
+    }
+
+    if(Engine_Data::three_d){
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION,2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION,1);
+
+        flags=flags|SDL_WINDOW_OPENGL;
     }
 
     if(Options::fullscreen){
@@ -126,55 +136,109 @@ bool Game_Window::initialize_video(){
 
     update_display_number();
 
-    renderer=SDL_CreateRenderer(screen,-1,SDL_RENDERER_TARGETTEXTURE);
-    if(renderer==0){
-        string msg="Unable to create renderer: ";
-        msg+=SDL_GetError();
-        Log::add_error(msg);
-        return false;
+    if(Engine_Data::three_d){
+        context=SDL_GL_CreateContext(screen);
+
+        //If the OpenGL context could not be set up.
+        if(context==0){
+            string msg="Unable to create OpenGL context: ";
+            msg+=SDL_GetError();
+            Log::add_error(msg);
+            return false;
+        }
+
+        if(Options::vsync){
+            SDL_GL_SetSwapInterval(1);
+        }
+        else{
+            SDL_GL_SetSwapInterval(0);
+        }
+
+        GLenum error=GL_NO_ERROR;
+
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+
+        error=glGetError();
+        if(error!=GL_NO_ERROR){
+            string msg="Error initializing OpenGL: ";
+            msg+=Strings::num_to_string(error);
+            Log::add_error(msg);
+            return false;
+        }
+
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        error=glGetError();
+        if(error!=GL_NO_ERROR){
+            string msg="Error initializing OpenGL: ";
+            msg+=Strings::num_to_string(error);
+            Log::add_error(msg);
+            return false;
+        }
+
+        glClearColor(0.f,0.f,0.f,1.f);
+
+        error=glGetError();
+        if(error!=GL_NO_ERROR){
+            string msg="Error initializing OpenGL: ";
+            msg+=Strings::num_to_string(error);
+            Log::add_error(msg);
+            return false;
+        }
     }
+    else{
+        renderer=SDL_CreateRenderer(screen,-1,SDL_RENDERER_TARGETTEXTURE);
+        if(renderer==0){
+            string msg="Unable to create renderer: ";
+            msg+=SDL_GetError();
+            Log::add_error(msg);
+            return false;
+        }
 
-    SDL_RenderSetLogicalSize(renderer,SCREEN_WIDTH,SCREEN_HEIGHT);
+        SDL_RenderSetLogicalSize(renderer,SCREEN_WIDTH,SCREEN_HEIGHT);
 
-    if(!SDL_RenderTargetSupported(renderer)){
-        Log::add_error("Render targets unsupported by renderer.");
-        return false;
+        if(!SDL_RenderTargetSupported(renderer)){
+            Log::add_error("Render targets unsupported by renderer.");
+            return false;
+        }
+
+        //Create a temporary texture to check for the rendering features we need.
+        SDL_Texture* texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STATIC,10,10);
+        if(texture==0){
+            string msg="Unable to check renderer features: ";
+            msg+=SDL_GetError();
+            Log::add_error(msg);
+            return false;
+        }
+
+        int support_alpha_blending=SDL_SetTextureBlendMode(texture,SDL_BLENDMODE_BLEND);
+        if(support_alpha_blending!=0){
+            string msg="Alpha blending unsupported by renderer: ";
+            msg+=SDL_GetError();
+            Log::add_error(msg);
+            return false;
+        }
+
+        int support_alpha_mod=SDL_SetTextureAlphaMod(texture,128);
+        if(support_alpha_mod!=0){
+            string msg="Alpha modding unsupported by renderer: ";
+            msg+=SDL_GetError();
+            Log::add_error(msg);
+            return false;
+        }
+
+        int support_color_mod=SDL_SetTextureColorMod(texture,128,128,128);
+        if(support_color_mod!=0){
+            string msg="Color modding unsupported by renderer: ";
+            msg+=SDL_GetError();
+            Log::add_error(msg);
+            return false;
+        }
+
+        SDL_DestroyTexture(texture);
     }
-
-    //Create a temporary texture to check for the rendering features we need.
-    SDL_Texture* texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_ARGB8888,SDL_TEXTUREACCESS_STATIC,10,10);
-    if(texture==0){
-        string msg="Unable to check renderer features: ";
-        msg+=SDL_GetError();
-        Log::add_error(msg);
-        return false;
-    }
-
-    int support_alpha_blending=SDL_SetTextureBlendMode(texture,SDL_BLENDMODE_BLEND);
-    if(support_alpha_blending!=0){
-        string msg="Alpha blending unsupported by renderer: ";
-        msg+=SDL_GetError();
-        Log::add_error(msg);
-        return false;
-    }
-
-    int support_alpha_mod=SDL_SetTextureAlphaMod(texture,128);
-    if(support_alpha_mod!=0){
-        string msg="Alpha modding unsupported by renderer: ";
-        msg+=SDL_GetError();
-        Log::add_error(msg);
-        return false;
-    }
-
-    int support_color_mod=SDL_SetTextureColorMod(texture,128,128,128);
-    if(support_color_mod!=0){
-        string msg="Color modding unsupported by renderer: ";
-        msg+=SDL_GetError();
-        Log::add_error(msg);
-        return false;
-    }
-
-    SDL_DestroyTexture(texture);
 
     Game_Manager::reset_camera_dimensions();
 
@@ -750,10 +814,22 @@ void Game_Window::render_draw_line(int x1,int y1,int x2,int y2){
 }
 
 void Game_Window::clear_renderer(const Color& color){
-    set_render_draw_color(color,color.get_alpha_double());
-    SDL_RenderClear(renderer);
+    if(Engine_Data::three_d){
+        ///glClearColor(color.get_red_double(),color.get_green_double(),color.get_blue_double(),color.get_alpha_double());
+
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    else{
+        set_render_draw_color(color,color.get_alpha_double());
+        SDL_RenderClear(renderer);
+    }
 }
 
 void Game_Window::render_present(){
-    SDL_RenderPresent(renderer);
+    if(Engine_Data::three_d){
+        SDL_GL_SwapWindow(screen);
+    }
+    else{
+        SDL_RenderPresent(renderer);
+    }
 }

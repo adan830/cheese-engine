@@ -23,6 +23,8 @@ private:
 
     static SDL_Renderer* renderer;
 
+    static SDL_GLContext context;
+
     //The logical resolution of the game window
     static int SCREEN_WIDTH;
     static int SCREEN_HEIGHT;
